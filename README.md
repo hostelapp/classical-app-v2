@@ -96,13 +96,26 @@ Setting `VITE_ENABLE_ADMIN=true` enables the `/admin` route, which hosts an offl
 Because the studio runs entirely in the browser, it is safe to disable it for public deployments by leaving
 `VITE_ENABLE_ADMIN` unset.
 
-## Deployment checklist
+## Deploying to GitHub Pages
+
+This branch ships with an automated GitHub Pages workflow. Once you set `catalog-rewrite` as the default branch and enable
+Pages in the repository settings (build source: **GitHub Actions**), every push to the branch will:
+
+1. Install dependencies with `npm ci`.
+2. Build the project with a preconfigured `VITE_BASE_PATH=/<repository-name>/` so assets load from the Pages sub-path.
+3. Publish the generated `dist/` folder through `actions/deploy-pages`.
+
+No manual terminal work is required—commit your changes, push, and Pages will update automatically. The workflow keeps the
+admin studio disabled in production builds; turn it on locally by setting `VITE_ENABLE_ADMIN=true` if you need to edit the
+catalog.
+
+## Deployment checklist for other hosts
 
 1. Decide whether to serve the catalog from the bundled `public/catalog.json` or a remote JSON endpoint. If using a remote
    endpoint, upload the exported file and set `VITE_CATALOG_URL` during the build.
-2. When hosting from a sub-path (e.g., GitHub Pages), set `VITE_BASE_PATH` before running `npm run build` so generated asset
-   URLs resolve correctly.
-3. Build the site with `npm run build` and deploy the `dist/` folder to any static host.
+2. When hosting from a sub-path, set `VITE_BASE_PATH` before running `npm run build` so generated asset URLs resolve
+   correctly (the GitHub Pages workflow does this automatically).
+3. Build the site with `npm run build` and deploy the `dist/` folder to your static host of choice.
 4. Omit `VITE_ENABLE_ADMIN` in production to hide the admin studio, unless you intend to expose it deliberately behind
    separate authentication.
 

@@ -5,7 +5,8 @@ and piece, while a dedicated admin studio (optional in production builds) helps 
 
 > **Note**
 > This branch captures the static, catalog-driven rewrite. If you are migrating from the earlier Supabase prototype, follow the
-> configuration and deployment steps below to adopt the new workflow.
+> configuration and deployment steps below to adopt the new workflow. Set this branch (`catalog-rewrite`) as the default in
+> GitHub before deploying so future pull requests target the rebuilt stack by default.
 
 ## Prerequisites
 

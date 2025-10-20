@@ -4,9 +4,10 @@ import { supabase } from '../lib/supabase';
 
 interface AdminLoginProps {
   onLogin: () => void;
+  accessError?: string;
 }
 
-const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin }) => {
+const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin, accessError }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -30,6 +31,7 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin }) => {
         onLogin();
       }
     } catch (err) {
+      console.error('Admin login failed', err);
       setError('An unexpected error occurred');
     } finally {
       setIsLoading(false);
@@ -38,7 +40,7 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin }) => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-lg p-8 w-full max-w-md">
+      <div className="bg-white rounded-xl shadow-lg p-8 w-full max-w-md space-y-6">
         <div className="text-center mb-8">
           <div className="bg-blue-100 rounded-full p-3 w-16 h-16 mx-auto mb-4 flex items-center justify-center">
             <Lock className="w-8 h-8 text-blue-600" />
@@ -46,6 +48,12 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin }) => {
           <h1 className="text-2xl font-bold text-gray-900">Admin Login</h1>
           <p className="text-gray-600 mt-2">Access the video management system</p>
         </div>
+
+        {accessError && (
+          <div className="bg-amber-50 border border-amber-200 text-amber-700 text-sm rounded-lg p-3">
+            {accessError}
+          </div>
+        )}
 
         <form onSubmit={handleLogin} className="space-y-6">
           <div>
@@ -102,7 +110,7 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin }) => {
           </button>
         </form>
 
-        <div className="mt-6 text-center">
+        <div className="text-center text-sm text-gray-500">
           <p className="text-sm text-gray-500">
             Need access? Contact your system administrator.
           </p>

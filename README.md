@@ -1,112 +1,120 @@
-# Classical On Demand - Setup Instructions
+# Classical Music Discovery
 
-## Database Setup Required
+An interactive catalogue of classical repertoire powered by Supabase and React. The public site lets visitors explore works by
+genre, composer, and piece, while a protected `/admin` surface allows authorized editors to manage the catalogue.
 
-The application requires a Supabase database with a `videos` table. Follow these steps:
+## Prerequisites
 
-### 1. Configure Supabase Connection
-- Click the "Supabase" button in the settings panel (top of preview)
-- This will set up your environment variables
+- Node.js 18+
+- npm 9+
+- Supabase CLI (for applying migrations) and access to a Supabase project
 
-### 2. Create the Videos Table
-Go to your Supabase Dashboard → SQL Editor and run this SQL:
+## Environment configuration
 
-```sql
--- Create videos table
-CREATE TABLE IF NOT EXISTS public.videos (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  search_term text UNIQUE NOT NULL,
-  youtube_id text NOT NULL,
-  genre text NOT NULL,
-  composer text NOT NULL,
-  symphony text NOT NULL,
-  year integer,
-  created_at timestamptz DEFAULT now(),
-  updated_at timestamptz DEFAULT now()
-);
+1. Copy the example environment file and fill in the values for your Supabase project:
 
--- Create indexes for better performance
-CREATE INDEX IF NOT EXISTS idx_videos_search_term ON public.videos (search_term);
-CREATE INDEX IF NOT EXISTS idx_videos_genre ON public.videos (genre);
+   ```bash
+   cp .env.example .env.local
+   ```
 
--- Enable Row Level Security
-ALTER TABLE public.videos ENABLE ROW LEVEL SECURITY;
+2. Ensure the following variables are set before building the app:
 
--- Allow public read access
-CREATE POLICY "Public can read videos" ON public.videos
-  FOR SELECT TO public USING (true);
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_ANON_KEY`
+   - `VITE_BASE_PATH` (optional) — set this to the public sub-path when deploying somewhere other than the domain root (for
+     example, GitHub Pages publishes to `/your-repo/`). Leave it unset or `/` when hosting from the root domain.
 
--- Allow authenticated users to manage videos (for admin)
-CREATE POLICY "Authenticated users can manage videos" ON public.videos
-  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+   When running the admin seeding script (see below) you will also need:
 
--- Create trigger for updated_at
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = now();
-    RETURN NEW;
-END;
-$$ language 'plpgsql';
+   - `SUPABASE_URL`
+   - `SUPABASE_SERVICE_ROLE_KEY`
+   - `ADMIN_EMAIL`
+   - `ADMIN_PASSWORD`
 
-CREATE TRIGGER update_videos_updated_at
-  BEFORE UPDATE ON public.videos
-  FOR EACH ROW
-  EXECUTE FUNCTION update_updated_at_column();
+The app validates these variables at runtime and will fail fast if any are missing.
+
+## Database setup
+
+This repository includes Supabase migrations that create and harden the schema. Apply them with the Supabase CLI:
+
+```bash
+supabase db push
 ```
 
-### 3. Insert Sample Data
-After creating the table, insert the video data:
+The migrations will:
 
-```sql
-INSERT INTO public.videos (search_term, youtube_id, genre, composer, symphony, year) VALUES
-('Bach Brandenburg Concerto No 3 full', 'pdsyNwUoON0', 'Baroque', 'Johann Sebastian Bach', 'Brandenburg Concerto No. 3', 1721),
-('Mozart Symphony No 40 full', 'JTc1mDieQI8', 'Classical', 'Wolfgang Amadeus Mozart', 'Symphony No. 40', 1788),
-('Beethoven Symphony No 9 full', 'rOjHhS5MtvA', 'Classical', 'Ludwig van Beethoven', 'Symphony No. 9', 1824),
-('Chopin Nocturne Op 9 No 2 full', 'YGRO05WcNDk', 'Romantic', 'Frédéric Chopin', 'Nocturne Op. 9 No. 2', 1832),
-('Vivaldi Four Seasons Spring full', 'GRxofEmo3HA', 'Baroque', 'Antonio Vivaldi', 'The Four Seasons - Spring', 1725),
-('Tchaikovsky Swan Lake full', 'CShopT9QUzw', 'Romantic', 'Pyotr Ilyich Tchaikovsky', 'Swan Lake', 1876),
-('Debussy Clair de Lune full', 'CvFH_6DNRCY', 'Modern', 'Claude Debussy', 'Clair de Lune', 1905),
-('Bach Toccata and Fugue full', 'ho9rZjlsyYY', 'Baroque', 'Johann Sebastian Bach', 'Toccata and Fugue in D minor', 1704),
-('Mozart Requiem full', 'sPlhKP0nUTs', 'Classical', 'Wolfgang Amadeus Mozart', 'Requiem', 1791),
-('Beethoven Moonlight Sonata full', '4Tr0otuiQuU', 'Classical', 'Ludwig van Beethoven', 'Moonlight Sonata', 1801),
-('Chopin Ballade No 1 full', 'Ce8p0VcTbuA', 'Romantic', 'Frédéric Chopin', 'Ballade No. 1', 1835),
-('Vivaldi Four Seasons Winter full', 'nGdFHFXciAQ', 'Baroque', 'Antonio Vivaldi', 'The Four Seasons - Winter', 1725),
-('Tchaikovsky 1812 Overture full', 'VbxgYlcNxE8', 'Romantic', 'Pyotr Ilyich Tchaikovsky', '1812 Overture', 1880),
-('Ravel Bolero full', 'r30D3SW4OVw', 'Modern', 'Maurice Ravel', 'Boléro', 1928),
-('Bach Well Tempered Clavier full', 'isxporhD8mQ', 'Baroque', 'Johann Sebastian Bach', 'The Well-Tempered Clavier', 1722),
-('Mozart Piano Concerto No 21 full', 'df-eLzao63E', 'Classical', 'Wolfgang Amadeus Mozart', 'Piano Concerto No. 21', 1785),
-('Beethoven Symphony No 5 full', '_4IRMYuE1hI', 'Classical', 'Ludwig van Beethoven', 'Symphony No. 5', 1808),
-('Chopin Etude Op 10 No 4 full', 'nqHbGNVFVUY', 'Romantic', 'Frédéric Chopin', 'Étude Op. 10 No. 4', 1832),
-('Vivaldi Gloria full', 'YLJOBdUhaEM', 'Baroque', 'Antonio Vivaldi', 'Gloria', 1715),
-('Tchaikovsky Nutcracker Suite full', 'M8J8urC_8Jw', 'Romantic', 'Pyotr Ilyich Tchaikovsky', 'The Nutcracker Suite', 1892),
-('Stravinsky Rite of Spring full', 'EkwqPJZe8ms', 'Modern', 'Igor Stravinsky', 'The Rite of Spring', 1913),
-('Bach Mass in B Minor full', 'VbF7JZIQfZ8', 'Baroque', 'Johann Sebastian Bach', 'Mass in B minor', 1749),
-('Mozart Don Giovanni full', 'ePR2jjd57_0', 'Classical', 'Wolfgang Amadeus Mozart', 'Don Giovanni', 1787),
-('Beethoven Emperor Concerto full', 'hDXWK3W477w', 'Classical', 'Ludwig van Beethoven', 'Emperor Concerto', 1811),
-('Chopin Piano Concerto No 1 full', 'V_kgya8D42I', 'Romantic', 'Frédéric Chopin', 'Piano Concerto No. 1', 1830),
-('Handel Messiah Hallelujah full', 'usfiAsWR4qU', 'Baroque', 'George Frideric Handel', 'Messiah - Hallelujah Chorus', 1741),
-('Schubert Unfinished Symphony full', 'yHKl2Rr6s_w', 'Romantic', 'Franz Schubert', 'Unfinished Symphony', 1822),
-('Mahler Symphony No 5 full', 'vOvXhyldUko', 'Modern', 'Gustav Mahler', 'Symphony No. 5', 1902),
-('Pachelbel Canon in D full', 'NlprozGcs80', 'Baroque', 'Johann Pachelbel', 'Canon in D', 1680),
-('Grieg Peer Gynt Suite full', 'kLp_Hh6DKWc', 'Romantic', 'Edvard Grieg', 'Peer Gynt Suite', 1875);
+- Create the `videos` table, seed the canonical repertoire entries, and maintain `updated_at` via a trigger.
+- Enable row-level security so the public site has read-only access while only admin accounts (identified by
+  `app_metadata.is_admin = true`) can insert, update, or delete records.
+- Enforce basic data integrity (YouTube ID length, non-null constraints, etc.).
+
+## Creating an administrator
+
+Run the provided script once per environment to create or update a privileged CMS user:
+
+```bash
+ADMIN_EMAIL="you@example.com" \
+ADMIN_PASSWORD="use-a-strong-password" \
+SUPABASE_URL="https://your-project.supabase.co" \
+SUPABASE_SERVICE_ROLE_KEY="service-role-key" \
+npm run seed:admin
 ```
 
-### 4. Authentication Setup
-For the admin panel, you'll need to:
-1. **Create Admin User:**
-   - Go to Supabase Dashboard → Authentication → Users
-   - Click "Add User"
-   - Email: `admin@admin.com`
-   - Password: `admin`
-   - Click "Add User"
+The script either creates the user or updates an existing account, ensuring `app_metadata.is_admin` is set to `true` so the
+account can use the `/admin` tools. Email confirmations remain enabled—Supabase marks the seeded admin as confirmed without
+disabling confirmations globally.
 
-2. **Disable Email Confirmation (for testing):**
-   - Go to Authentication → Settings
-   - Turn off "Enable email confirmations"
+## Running the project locally
 
-3. **Login Credentials:**
-   - Email: `admin@admin.com`
-   - Password: `admin`
+```bash
+npm install
+npm run dev
+```
 
-Once you complete these steps, the application will work properly!
+The public catalogue lives at `http://localhost:5173/`. The CMS is intentionally hidden behind the dedicated
+`http://localhost:5173/admin` route.
+
+### Quality gates
+
+Run all static checks in one step:
+
+```bash
+npm run validate
+```
+
+This command executes ESLint, TypeScript type-checking, and a production build.
+
+## Deployment checklist
+
+1. Ensure Supabase migrations have been applied to the target project (`supabase db push`).
+2. Run `npm run seed:admin` with production credentials to provision at least one admin user.
+3. Provide the frontend with the production `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` environment variables.
+4. Build the site with `npm run build` and deploy the generated assets (e.g., to Vercel, Netlify, GitHub Pages, or any static
+   host). For sub-path hosts such as GitHub Pages, build with `VITE_BASE_PATH` set to the published path:
+
+   ```bash
+   VITE_BASE_PATH="/classical-app-v2/" npm run build
+   ```
+5. Confirm that `/admin` is reachable only by accounts where `app_metadata.is_admin` is `true` and that public visitors can
+   browse the catalogue without authentication.
+
+## Security notes
+
+- Never ship Supabase service-role keys to the browser. The admin script is meant to run locally or in secure CI/CD contexts.
+- All destructive CMS actions require explicit confirmation and are logged to the browser console to aid debugging.
+- If you onboard additional admins manually via the Supabase dashboard, remember to set `app_metadata.is_admin` to `true` so
+  they can authenticate against the CMS.
+
+## Project structure highlights
+
+- `src/pages/PublicExperience.tsx` renders the audience-facing experience using the live `videos` table as the single source
+  of truth.
+- `src/pages/AdminApp.tsx` gates the CMS, checking both authentication status and the `is_admin` claim before loading the
+  editor surface.
+- `src/components/AdminCMS.tsx` provides the CRUD interface with client-side validation layered on top of Supabase RLS.
+- `supabase/migrations` contains repeatable schema and data migrations; use the Supabase CLI to keep environments in sync.
+
+## Support
+
+If you encounter issues while configuring Supabase policies or provisioning admin users, review the CLI output first. Most
+errors stem from missing environment variables or insufficient Supabase API permissions when running the seeding script.

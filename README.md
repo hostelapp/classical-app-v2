@@ -3,6 +3,10 @@
 An interactive classical music catalogue built with React. The public experience lets visitors browse works by genre, composer,
 and piece, while a dedicated admin studio (optional in production builds) helps maintainers curate the underlying JSON catalog.
 
+> **Note**
+> This branch captures the static, catalog-driven rewrite. If you are migrating from the earlier Supabase prototype, follow the
+> configuration and deployment steps below to adopt the new workflow.
+
 ## Prerequisites
 
 - Node.js 18+

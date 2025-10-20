@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, CreditCard as Edit2, Trash2, Save, X, LogOut, Search, Filter, Play } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Plus, Pencil, Trash2, Save, X, LogOut, Search, Filter, Play, AlertTriangle } from 'lucide-react';
 import { supabase, Video } from '../lib/supabase';
+
+type VideoPayload = Pick<Video, 'search_term' | 'youtube_id' | 'genre' | 'composer' | 'symphony' | 'year'>;
 
 interface AdminCMSProps {
   onLogout: () => void;
@@ -8,7 +10,6 @@ interface AdminCMSProps {
 
 const AdminCMS: React.FC<AdminCMSProps> = ({ onLogout }) => {
   const [videos, setVideos] = useState<Video[]>([]);
-  const [filteredVideos, setFilteredVideos] = useState<Video[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -17,6 +18,7 @@ const AdminCMS: React.FC<AdminCMSProps> = ({ onLogout }) => {
   const [testingVideoId, setTestingVideoId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [deleteCandidate, setDeleteCandidate] = useState<Video | null>(null);
 
   const [formData, setFormData] = useState({
     search_term: '',
@@ -27,22 +29,110 @@ const AdminCMS: React.FC<AdminCMSProps> = ({ onLogout }) => {
     year: ''
   });
 
-  const genres = ['Baroque', 'Classical', 'Romantic', 'Modern', 'Contemporary'];
+  const resetForm = () => {
+    setFormData({
+      search_term: '',
+      youtube_id: '',
+      genre: '',
+      composer: '',
+      symphony: '',
+      year: '',
+    });
+  };
+
+  const buildPayload = (): { payload: VideoPayload; yearError: string | null } => {
+    const base = {
+      search_term: formData.search_term.trim(),
+      youtube_id: formData.youtube_id.trim(),
+      genre: formData.genre.trim(),
+      composer: formData.composer.trim(),
+      symphony: formData.symphony.trim(),
+    } satisfies Omit<VideoPayload, 'year'>;
+
+    const yearInput = formData.year.trim();
+    let year: number | null = null;
+    let yearError: string | null = null;
+
+    if (yearInput) {
+      if (!/^[0-9]{3,4}$/u.test(yearInput)) {
+        yearError = 'Year must be a 3 or 4 digit number.';
+      } else {
+        year = Number.parseInt(yearInput, 10);
+      }
+    }
+
+    return { payload: { ...base, year }, yearError };
+  };
+
+  const validateVideoPayload = (payload: VideoPayload): string | null => {
+    if (!payload.search_term) {
+      return 'Search term is required.';
+    }
+
+    if (!payload.youtube_id) {
+      return 'YouTube ID is required.';
+    }
+
+    if (!/^[a-zA-Z0-9_-]{11}$/u.test(payload.youtube_id)) {
+      return 'YouTube ID must be exactly 11 characters and contain only letters, numbers, hyphens, or underscores.';
+    }
+
+    if (!payload.genre) {
+      return 'Genre is required.';
+    }
+
+    if (!payload.composer) {
+      return 'Composer is required.';
+    }
+
+    if (!payload.symphony) {
+      return 'Symphony/Piece name is required.';
+    }
+
+    if (payload.year !== null) {
+      const currentYear = new Date().getFullYear();
+      if (payload.year < 1600 || payload.year > currentYear) {
+        return `Year must be between 1600 and ${currentYear}.`;
+      }
+    }
+
+    return null;
+  };
+
+  const defaultGenres = useMemo(() => ['Baroque', 'Classical', 'Romantic', 'Modern', 'Contemporary'], []);
+
+  const genres = useMemo(() => {
+    const unique = new Set(defaultGenres);
+    videos.forEach((video) => unique.add(video.genre));
+    return Array.from(unique).sort((a, b) => a.localeCompare(b));
+  }, [defaultGenres, videos]);
 
   useEffect(() => {
-    fetchVideos();
-  }, []);
+    if (!supabase) {
+      setIsLoading(false);
+      return;
+    }
+
+    void fetchVideos(true);
+    // The Supabase client is configured at build time; rerunning this effect when it changes is unnecessary.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supabase]);
 
   const handleTestVideo = (videoId: string) => {
     setTestingVideoId(testingVideoId === videoId ? null : videoId);
   };
 
-  useEffect(() => {
-    filterVideos();
-  }, [videos, searchTerm, genreFilter]);
+  const fetchVideos = async (showSpinner = false) => {
+    if (showSpinner) {
+      setIsLoading(true);
+    }
 
-  const fetchVideos = async () => {
     try {
+      if (!supabase) {
+        setError('Supabase is not configured for this deployment.');
+        return;
+      }
+
       const { data, error } = await supabase
         .from('videos')
         .select('*')
@@ -53,75 +143,81 @@ const AdminCMS: React.FC<AdminCMSProps> = ({ onLogout }) => {
       if (error) throw error;
       setVideos(data || []);
     } catch (err) {
-      setError('Failed to fetch videos');
       console.error(err);
+      setError('Failed to fetch videos');
     } finally {
-      setIsLoading(false);
+      if (showSpinner) {
+        setIsLoading(false);
+      }
     }
   };
 
-  const filterVideos = () => {
-    let filtered = videos;
+  const filteredVideos = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase();
 
-    if (searchTerm) {
-      filtered = filtered.filter(video =>
-        video.composer.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        video.symphony.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        video.search_term.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    }
+    return videos.filter((video) => {
+      const matchesSearch = query
+        ? video.composer.toLowerCase().includes(query) ||
+          video.symphony.toLowerCase().includes(query) ||
+          video.search_term.toLowerCase().includes(query) ||
+          video.youtube_id.toLowerCase().includes(query)
+        : true;
 
-    if (genreFilter) {
-      filtered = filtered.filter(video => video.genre === genreFilter);
-    }
+      const matchesGenre = genreFilter ? video.genre === genreFilter : true;
 
-    setFilteredVideos(filtered);
-  };
+      return matchesSearch && matchesGenre;
+    });
+  }, [genreFilter, searchTerm, videos]);
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setSuccess('');
 
-    try {
-      const { error } = await supabase
-        .from('videos')
-        .insert([{
-          search_term: formData.search_term,
-          youtube_id: formData.youtube_id,
-          genre: formData.genre,
-          composer: formData.composer,
-          symphony: formData.symphony,
-          year: formData.year ? parseInt(formData.year) : null
-        }]);
+    const { payload, yearError } = buildPayload();
+    if (yearError) {
+      setError(yearError);
+      return;
+    }
 
-      if (error) throw error;
+    const validationError = validateVideoPayload(payload);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    try {
+      if (!supabase) {
+        setError('Supabase is not configured for this deployment.');
+        return;
+      }
+
+      const { error: supabaseError } = await supabase.from('videos').insert([payload]);
+
+      if (supabaseError) throw supabaseError;
 
       setSuccess('Video added successfully!');
       setShowAddForm(false);
-      setFormData({
-        search_term: '',
-        youtube_id: '',
-        genre: '',
-        composer: '',
-        symphony: '',
-        year: ''
-      });
-      fetchVideos();
-    } catch (err: any) {
-      setError(err.message || 'Failed to add video');
+      resetForm();
+      await fetchVideos();
+    } catch (err) {
+      console.error(err);
+      setError(err instanceof Error ? err.message : 'Failed to add video');
     }
   };
 
   const handleEdit = (video: Video) => {
+    setError('');
+    setSuccess('');
     setEditingId(video.id);
+    setShowAddForm(false);
     setFormData({
       search_term: video.search_term,
       youtube_id: video.youtube_id,
       genre: video.genre,
       composer: video.composer,
       symphony: video.symphony,
-      year: video.year?.toString() || ''
+      year: video.year?.toString() || '',
     });
   };
 
@@ -132,55 +228,97 @@ const AdminCMS: React.FC<AdminCMSProps> = ({ onLogout }) => {
     setError('');
     setSuccess('');
 
+    const { payload, yearError } = buildPayload();
+    if (yearError) {
+      setError(yearError);
+      return;
+    }
+
+    const validationError = validateVideoPayload(payload);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
     try {
-      const { error } = await supabase
+      if (!supabase) {
+        setError('Supabase is not configured for this deployment.');
+        return;
+      }
+
+      const { error: supabaseError } = await supabase
         .from('videos')
         .update({
-          search_term: formData.search_term,
-          youtube_id: formData.youtube_id,
-          genre: formData.genre,
-          composer: formData.composer,
-          symphony: formData.symphony,
-          year: formData.year ? parseInt(formData.year) : null,
-          updated_at: new Date().toISOString()
+          ...payload,
+          updated_at: new Date().toISOString(),
         })
         .eq('id', editingId);
 
-      if (error) throw error;
+      if (supabaseError) throw supabaseError;
 
       setSuccess('Video updated successfully!');
       setEditingId(null);
-      fetchVideos();
-    } catch (err: any) {
-      setError(err.message || 'Failed to update video');
+      resetForm();
+      await fetchVideos();
+    } catch (err) {
+      console.error(err);
+      setError(err instanceof Error ? err.message : 'Failed to update video');
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this video?')) return;
+  const confirmDelete = async () => {
+    if (!deleteCandidate) return;
 
     setError('');
     setSuccess('');
 
     try {
-      const { error } = await supabase
+      if (!supabase) {
+        setError('Supabase is not configured for this deployment.');
+        return;
+      }
+
+      const { error: supabaseError } = await supabase
         .from('videos')
         .delete()
-        .eq('id', id);
+        .eq('id', deleteCandidate.id);
 
-      if (error) throw error;
+      if (supabaseError) throw supabaseError;
 
       setSuccess('Video deleted successfully!');
-      fetchVideos();
-    } catch (err: any) {
-      setError(err.message || 'Failed to delete video');
+      await fetchVideos();
+    } catch (err) {
+      console.error(err);
+      setError(err instanceof Error ? err.message : 'Failed to delete video');
+    } finally {
+      setDeleteCandidate(null);
     }
   };
 
+  const cancelDelete = () => setDeleteCandidate(null);
+
   const handleLogout = async () => {
+    if (!supabase) {
+      return;
+    }
+
     await supabase.auth.signOut();
     onLogout();
   };
+
+  if (!supabase) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+        <div className="bg-white rounded-xl shadow-lg p-8 max-w-md text-center space-y-4">
+          <h1 className="text-2xl font-bold text-gray-900">Admin unavailable</h1>
+          <p className="text-gray-600">
+            Supabase is not configured for this deployment, so catalogue management actions cannot be performed.
+            Provide the required environment variables and redeploy to enable admin tools.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -243,7 +381,13 @@ const AdminCMS: React.FC<AdminCMSProps> = ({ onLogout }) => {
 
             {/* Add Button */}
             <button
-              onClick={() => setShowAddForm(true)}
+              onClick={() => {
+                setError('');
+                setSuccess('');
+                resetForm();
+                setEditingId(null);
+                setShowAddForm(true);
+              }}
               className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
             >
               <Plus className="w-4 h-4" />
@@ -272,7 +416,10 @@ const AdminCMS: React.FC<AdminCMSProps> = ({ onLogout }) => {
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-bold">Add New Video</h2>
                 <button
-                  onClick={() => setShowAddForm(false)}
+                  onClick={() => {
+                    resetForm();
+                    setShowAddForm(false);
+                  }}
                   className="text-gray-400 hover:text-gray-600"
                 >
                   <X className="w-6 h-6" />
@@ -373,7 +520,10 @@ const AdminCMS: React.FC<AdminCMSProps> = ({ onLogout }) => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setShowAddForm(false)}
+                    onClick={() => {
+                      resetForm();
+                      setShowAddForm(false);
+                    }}
                     className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
                   >
                     Cancel
@@ -468,7 +618,10 @@ const AdminCMS: React.FC<AdminCMSProps> = ({ onLogout }) => {
                               <Save className="w-4 h-4" />
                             </button>
                             <button
-                              onClick={() => setEditingId(null)}
+                              onClick={() => {
+                                setEditingId(null);
+                                resetForm();
+                              }}
                               className="text-gray-600 hover:text-gray-900"
                             >
                               <X className="w-4 h-4" />
@@ -508,10 +661,10 @@ const AdminCMS: React.FC<AdminCMSProps> = ({ onLogout }) => {
                               onClick={() => handleEdit(video)}
                               className="text-blue-600 hover:text-blue-900"
                             >
-                              <Edit2 className="w-4 h-4" />
+                              <Pencil className="w-4 h-4" />
                             </button>
                             <button
-                              onClick={() => handleDelete(video.id)}
+                              onClick={() => setDeleteCandidate(video)}
                               className="text-red-600 hover:text-red-900"
                             >
                               <Trash2 className="w-4 h-4" />
@@ -570,6 +723,35 @@ const AdminCMS: React.FC<AdminCMSProps> = ({ onLogout }) => {
           Total videos: {filteredVideos.length} of {videos.length}
         </div>
       </div>
+
+      {deleteCandidate && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 space-y-4">
+            <div className="flex items-center gap-3 text-amber-700">
+              <AlertTriangle className="w-6 h-6" aria-hidden="true" />
+              <h2 className="text-lg font-semibold">Delete this video?</h2>
+            </div>
+            <p className="text-gray-600 text-sm">
+              Removing <span className="font-medium">{deleteCandidate.composer} — {deleteCandidate.symphony}</span> will make it
+              unavailable in the public catalogue. This action cannot be undone.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={cancelDelete}
+                className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Keep video
+              </button>
+              <button
+                onClick={confirmDelete}
+                className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors"
+              >
+                Delete video
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

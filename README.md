@@ -21,8 +21,6 @@ genre, composer, and piece, while a protected `/admin` surface allows authorized
 
    - `VITE_SUPABASE_URL`
    - `VITE_SUPABASE_ANON_KEY`
-   - `VITE_BASE_PATH` (optional) — set this to the public sub-path when deploying somewhere other than the domain root (for
-     example, GitHub Pages publishes to `/your-repo/`). Leave it unset or `/` when hosting from the root domain.
 
    When running the admin seeding script (see below) you will also need:
 
@@ -89,12 +87,7 @@ This command executes ESLint, TypeScript type-checking, and a production build.
 1. Ensure Supabase migrations have been applied to the target project (`supabase db push`).
 2. Run `npm run seed:admin` with production credentials to provision at least one admin user.
 3. Provide the frontend with the production `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` environment variables.
-4. Build the site with `npm run build` and deploy the generated assets (e.g., to Vercel, Netlify, GitHub Pages, or any static
-   host). For sub-path hosts such as GitHub Pages, build with `VITE_BASE_PATH` set to the published path:
-
-   ```bash
-   VITE_BASE_PATH="/classical-app-v2/" npm run build
-   ```
+4. Build the site with `npm run build` and deploy the generated assets (e.g., to Vercel, Netlify, or any static host).
 5. Confirm that `/admin` is reachable only by accounts where `app_metadata.is_admin` is `true` and that public visitors can
    browse the catalogue without authentication.
 

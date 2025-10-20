@@ -2,14 +2,19 @@ import { useEffect, useState } from 'react';
 import PublicExperience from './pages/PublicExperience';
 import AdminApp from './pages/AdminApp';
 import NotFound from './pages/NotFound';
-import { stripBasePath } from './lib/basePath';
+
+const normalizePath = (pathname: string) => {
+  if (pathname === '/') return pathname;
+  const trimmed = pathname.replace(/\/+$/, '');
+  return trimmed === '' ? '/' : trimmed;
+};
 
 const App = () => {
-  const [path, setPath] = useState<string>(() => stripBasePath(window.location.pathname));
+  const [path, setPath] = useState<string>(() => normalizePath(window.location.pathname));
 
   useEffect(() => {
     const handlePopState = () => {
-      setPath(stripBasePath(window.location.pathname));
+      setPath(normalizePath(window.location.pathname));
     };
 
     window.addEventListener('popstate', handlePopState);

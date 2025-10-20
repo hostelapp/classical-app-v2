@@ -1,38 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Music, Info } from 'lucide-react';
+import { Music } from 'lucide-react';
 import Slider from '../components/Slider';
 import YouTubePlayer from '../components/YouTubePlayer';
-import { musicData } from '../data/musicData';
-import { FALLBACK_DEFAULT_VIDEO, fallbackVideoIds } from '../data/fallbackVideoIds';
 import { supabase, Video } from '../lib/supabase';
-
-const FALLBACK_TIMESTAMP = '1970-01-01T00:00:00.000Z';
-
-const buildFallbackVideos = (): Video[] => {
-  const videos: Video[] = [];
-
-  musicData.forEach((genre, genreIndex) => {
-    genre.composers.forEach((composer, composerIndex) => {
-      composer.symphonies.forEach((symphony, symphonyIndex) => {
-        const youtubeId = fallbackVideoIds[symphony.searchTerm] ?? FALLBACK_DEFAULT_VIDEO;
-
-        videos.push({
-          id: `fallback-${genreIndex}-${composerIndex}-${symphonyIndex}`,
-          search_term: symphony.searchTerm,
-          youtube_id: youtubeId,
-          genre: genre.name,
-          composer: composer.name,
-          symphony: symphony.name,
-          year: Number.isFinite(symphony.year) ? symphony.year : null,
-          created_at: FALLBACK_TIMESTAMP,
-          updated_at: FALLBACK_TIMESTAMP,
-        });
-      });
-    });
-  });
-
-  return videos;
-};
 
 type GroupedVideos = Array<{
   genre: string;
@@ -74,8 +44,7 @@ const groupVideos = (videos: Video[]): GroupedVideos => {
 const PublicExperience = () => {
   const [videos, setVideos] = useState<Video[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const fallbackVideos = useMemo(buildFallbackVideos, []);
+  const [error, setError] = useState<string | null>(null);
   const [autoplay, setAutoplay] = useState(false);
   const [selectedGenreIndex, setSelectedGenreIndex] = useState(0);
   const [selectedComposerIndex, setSelectedComposerIndex] = useState(0);
@@ -84,39 +53,27 @@ const PublicExperience = () => {
   useEffect(() => {
     const fetchVideos = async () => {
       setIsLoading(true);
-      setStatusMessage(null);
+      setError(null);
 
-      try {
-        const { data, error: supabaseError } = await supabase
-          .from('videos')
-          .select('*')
-          .order('genre', { ascending: true })
-          .order('composer', { ascending: true })
-          .order('symphony', { ascending: true });
+      const { data, error: supabaseError } = await supabase
+        .from('videos')
+        .select('*')
+        .order('genre', { ascending: true })
+        .order('composer', { ascending: true })
+        .order('symphony', { ascending: true });
 
-        if (supabaseError) {
-          throw supabaseError;
-        }
-
-        if (data && data.length > 0) {
-          setVideos(data);
-        } else {
-          setVideos(fallbackVideos);
-          setStatusMessage(
-            'Live repertoire is empty right now, so we are showing the built-in catalog as a fallback.'
-          );
-        }
-      } catch (err) {
-        console.error('Failed to load repertoire', err);
-        setVideos(fallbackVideos);
-        setStatusMessage('We could not reach the database. Showing the built-in catalog instead.');
-      } finally {
-        setIsLoading(false);
+      if (supabaseError) {
+        console.error('Failed to load repertoire', supabaseError);
+        setError('We were unable to load the repertoire. Please try again later.');
+      } else {
+        setVideos(data ?? []);
       }
+
+      setIsLoading(false);
     };
 
     fetchVideos();
-  }, [fallbackVideos]);
+  }, []);
 
   const groupedVideos = useMemo(() => groupVideos(videos), [videos]);
 
@@ -153,14 +110,24 @@ const PublicExperience = () => {
     );
   }
 
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center px-4">
+        <div className="bg-white rounded-xl shadow-lg p-8 max-w-lg text-center">
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">Something went wrong</h1>
+          <p className="text-gray-600">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
   if (!currentGenre || !currentComposer || !currentSymphony) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center px-4">
         <div className="bg-white rounded-xl shadow-lg p-8 max-w-lg text-center">
           <h1 className="text-2xl font-bold text-gray-900 mb-4">Repertoire unavailable</h1>
           <p className="text-gray-600">
-            We could not find any repertoire to display. Please ensure the database is seeded with videos or rely on the
-            built-in catalog.
+            We could not find any repertoire to display. Please ensure the database is seeded with videos.
           </p>
         </div>
       </div>
@@ -184,15 +151,6 @@ const PublicExperience = () => {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {statusMessage && (
-          <div className="mb-6 flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4 text-blue-800">
-            <Info className="mt-0.5 h-5 w-5 flex-shrink-0" aria-hidden="true" />
-            <p className="text-sm" role="status">
-              {statusMessage}
-            </p>
-          </div>
-        )}
-
         <div className="bg-white rounded-xl shadow-lg p-8 mb-8">
           <Slider
             title="Genre"

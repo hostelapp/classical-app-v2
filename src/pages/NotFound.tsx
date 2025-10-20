@@ -1,4 +1,6 @@
-const homeHref = import.meta.env.BASE_URL || '/';
+import { buildHref } from '../lib/basePath';
+
+const homeHref = buildHref('/');
 
 interface NotFoundProps {
   currentPath?: string;

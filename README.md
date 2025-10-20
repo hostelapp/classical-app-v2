@@ -1,120 +1,123 @@
 # Classical Music Discovery
 
-An interactive catalogue of classical repertoire powered by Supabase and React. The public site lets visitors explore works by
-genre, composer, and piece, while a protected `/admin` surface allows authorized editors to manage the catalogue.
+An interactive classical music catalogue built with React. The public experience lets visitors browse works by genre, composer,
+and piece, while a dedicated admin studio (optional in production builds) helps maintainers curate the underlying JSON catalog.
 
 ## Prerequisites
 
 - Node.js 18+
 - npm 9+
-- Supabase CLI (for applying migrations) and access to a Supabase project
 
-## Environment configuration
+## Getting started
 
-1. Copy the example environment file and fill in the values for your Supabase project:
-
-   ```bash
-   cp .env.example .env.local
-   ```
-
-2. Ensure the following variables are set before building the app:
-
-   - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_ANON_KEY`
-   - `VITE_BASE_PATH` (optional) — set this to the public sub-path when deploying somewhere other than the domain root (for
-     example, GitHub Pages publishes to `/your-repo/`). Leave it unset or `/` when hosting from the root domain.
-
-   When running the admin seeding script (see below) you will also need:
-
-   - `SUPABASE_URL`
-   - `SUPABASE_SERVICE_ROLE_KEY`
-   - `ADMIN_EMAIL`
-   - `ADMIN_PASSWORD`
-
-The app validates these variables at runtime and will fail fast if any are missing.
-
-## Database setup
-
-This repository includes Supabase migrations that create and harden the schema. Apply them with the Supabase CLI:
-
-```bash
-supabase db push
-```
-
-The migrations will:
-
-- Create the `videos` table, seed the canonical repertoire entries, and maintain `updated_at` via a trigger.
-- Enable row-level security so the public site has read-only access while only admin accounts (identified by
-  `app_metadata.is_admin = true`) can insert, update, or delete records.
-- Enforce basic data integrity (YouTube ID length, non-null constraints, etc.).
-
-## Creating an administrator
-
-Run the provided script once per environment to create or update a privileged CMS user:
-
-```bash
-ADMIN_EMAIL="you@example.com" \
-ADMIN_PASSWORD="use-a-strong-password" \
-SUPABASE_URL="https://your-project.supabase.co" \
-SUPABASE_SERVICE_ROLE_KEY="service-role-key" \
-npm run seed:admin
-```
-
-The script either creates the user or updates an existing account, ensuring `app_metadata.is_admin` is set to `true` so the
-account can use the `/admin` tools. Email confirmations remain enabled—Supabase marks the seeded admin as confirmed without
-disabling confirmations globally.
-
-## Running the project locally
+Install dependencies and launch the development server:
 
 ```bash
 npm install
 npm run dev
 ```
 
-The public catalogue lives at `http://localhost:5173/`. The CMS is intentionally hidden behind the dedicated
-`http://localhost:5173/admin` route.
+The public site runs at <http://localhost:5173/>. The admin studio lives at <http://localhost:5173/admin> when enabled.
 
-### Quality gates
+To create an optimized production build run:
 
-Run all static checks in one step:
+```bash
+npm run build
+```
+
+## Configuration
+
+Copy the example environment file if you need to customize runtime settings:
+
+```bash
+cp .env.example .env.local
+```
+
+Available variables:
+
+- `VITE_BASE_PATH` &mdash; set this when deploying under a sub-path such as GitHub Pages (for example `/classical-app-v2/`).
+- `VITE_CATALOG_URL` &mdash; optionally point to a remote `catalog.json`. When omitted, the bundled static catalog is used.
+- `VITE_ENABLE_ADMIN` &mdash; set to `true` to include the admin studio in the build. Leave unset/`false` for public deployments.
+
+## Catalog data model
+
+The repertoire is stored as a structured JSON document (`public/catalog.json`). It captures a hierarchy of genres, composers,
+and works:
+
+```json
+{
+  "schemaVersion": 1,
+  "generatedAt": "2024-01-01T00:00:00.000Z",
+  "genres": [
+    {
+      "id": "baroque-1600-1750",
+      "name": "Baroque",
+      "period": "1600-1750",
+      "composers": [
+        {
+          "id": "johann-sebastian-bach",
+          "name": "Johann Sebastian Bach",
+          "birthYear": 1685,
+          "deathYear": 1750,
+          "works": [
+            {
+              "id": "johann-sebastian-bach-brandenburg-concerto-no-3",
+              "title": "Brandenburg Concerto No. 3",
+              "year": 1721,
+              "youtubeId": "pdsyNwUoON0",
+              "searchTerm": "Bach Brandenburg Concerto No 3 full"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+During runtime the app loads the configured catalog (either the bundled file or the remote URL), validates its structure, and
+renders the browsing interface. If the live catalog is unavailable the public experience falls back to the built-in data and
+surfaces a friendly status message.
+
+## Admin studio
+
+Setting `VITE_ENABLE_ADMIN=true` enables the `/admin` route, which hosts an offline-friendly catalog editor:
+
+- Load the currently configured catalog, start from the bundled default, or upload a previously exported JSON file.
+- Add, edit, or remove genres, composers, and works with inline validation for common mistakes.
+- Download the updated catalog as `catalog.json` for publication (commit it to version control or upload it to your preferred
+  object store).
+
+Because the studio runs entirely in the browser, it is safe to disable it for public deployments by leaving
+`VITE_ENABLE_ADMIN` unset.
+
+## Deployment checklist
+
+1. Decide whether to serve the catalog from the bundled `public/catalog.json` or a remote JSON endpoint. If using a remote
+   endpoint, upload the exported file and set `VITE_CATALOG_URL` during the build.
+2. When hosting from a sub-path (e.g., GitHub Pages), set `VITE_BASE_PATH` before running `npm run build` so generated asset
+   URLs resolve correctly.
+3. Build the site with `npm run build` and deploy the `dist/` folder to any static host.
+4. Omit `VITE_ENABLE_ADMIN` in production to hide the admin studio, unless you intend to expose it deliberately behind
+   separate authentication.
+
+## Quality checks
+
+Run linting, type-checking, and a production build in one step:
 
 ```bash
 npm run validate
 ```
 
-This command executes ESLint, TypeScript type-checking, and a production build.
+## Project structure
 
-## Deployment checklist
-
-1. Ensure Supabase migrations have been applied to the target project (`supabase db push`).
-2. Run `npm run seed:admin` with production credentials to provision at least one admin user.
-3. Provide the frontend with the production `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` environment variables.
-4. Build the site with `npm run build` and deploy the generated assets (e.g., to Vercel, Netlify, GitHub Pages, or any static
-   host). For sub-path hosts such as GitHub Pages, build with `VITE_BASE_PATH` set to the published path:
-
-   ```bash
-   VITE_BASE_PATH="/classical-app-v2/" npm run build
-   ```
-5. Confirm that `/admin` is reachable only by accounts where `app_metadata.is_admin` is `true` and that public visitors can
-   browse the catalogue without authentication.
-
-## Security notes
-
-- Never ship Supabase service-role keys to the browser. The admin script is meant to run locally or in secure CI/CD contexts.
-- All destructive CMS actions require explicit confirmation and are logged to the browser console to aid debugging.
-- If you onboard additional admins manually via the Supabase dashboard, remember to set `app_metadata.is_admin` to `true` so
-  they can authenticate against the CMS.
-
-## Project structure highlights
-
-- `src/pages/PublicExperience.tsx` renders the audience-facing experience using the live `videos` table as the single source
-  of truth.
-- `src/pages/AdminApp.tsx` gates the CMS, checking both authentication status and the `is_admin` claim before loading the
-  editor surface.
-- `src/components/AdminCMS.tsx` provides the CRUD interface with client-side validation layered on top of Supabase RLS.
-- `supabase/migrations` contains repeatable schema and data migrations; use the Supabase CLI to keep environments in sync.
+- `public/catalog.json` &mdash; default repertoire data served in static builds.
+- `src/catalog/` &mdash; catalog loading, parsing, and default dataset.
+- `src/components/AdminStudio.tsx` &mdash; browser-based catalog editor.
+- `src/pages/PublicExperience.tsx` &mdash; audience-facing experience using the loaded catalog.
+- `src/lib/basePath.ts` &mdash; helpers for base-path aware routing and asset URLs.
 
 ## Support
 
-If you encounter issues while configuring Supabase policies or provisioning admin users, review the CLI output first. Most
-errors stem from missing environment variables or insufficient Supabase API permissions when running the seeding script.
+If you encounter issues loading a custom catalog, check the browser console for validation errors. The admin studio always
+validates uploaded documents before applying changes, helping you catch structural mistakes before publication.

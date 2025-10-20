@@ -41,3 +41,13 @@ export const buildHref = (path: string) => {
 
   return `${normalizedBase}${target}`;
 };
+
+export const buildStaticAssetPath = (asset: string) => {
+  const sanitized = asset.replace(/^\/+/, '');
+
+  if (normalizedBase === '/' || normalizedBase === '') {
+    return `/${sanitized}`;
+  }
+
+  return `${normalizedBase}/${sanitized}`.replace(/\/{2,}/g, '/');
+};

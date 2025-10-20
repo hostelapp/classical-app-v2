@@ -1,163 +1,131 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Music, Info } from 'lucide-react';
+import { Info, Music, RefreshCcw } from 'lucide-react';
 import Slider from '../components/Slider';
 import YouTubePlayer from '../components/YouTubePlayer';
-import { musicData } from '../data/musicData';
-import { FALLBACK_DEFAULT_VIDEO, fallbackVideoIds } from '../data/fallbackVideoIds';
-import { supabase, Video } from '../lib/supabase';
+import { useCatalog } from '../catalog/useCatalog';
+import { getConfiguredCatalogUrl } from '../catalog/catalogService';
+import type { CatalogComposer, CatalogDocument, CatalogWork } from '../catalog/types';
 
-const FALLBACK_TIMESTAMP = '1970-01-01T00:00:00.000Z';
+interface ComposerViewModel {
+  id: string;
+  name: string;
+  works: CatalogWork[];
+}
 
-const buildFallbackVideos = (): Video[] => {
-  const videos: Video[] = [];
+interface GenreViewModel {
+  id: string;
+  name: string;
+  period: string | null;
+  composers: ComposerViewModel[];
+}
 
-  musicData.forEach((genre, genreIndex) => {
-    genre.composers.forEach((composer, composerIndex) => {
-      composer.symphonies.forEach((symphony, symphonyIndex) => {
-        const youtubeId = fallbackVideoIds[symphony.searchTerm] ?? FALLBACK_DEFAULT_VIDEO;
+const buildViewModel = (catalog: CatalogDocument | undefined): GenreViewModel[] => {
+  if (!catalog) {
+    return [];
+  }
 
-        videos.push({
-          id: `fallback-${genreIndex}-${composerIndex}-${symphonyIndex}`,
-          search_term: symphony.searchTerm,
-          youtube_id: youtubeId,
-          genre: genre.name,
-          composer: composer.name,
-          symphony: symphony.name,
-          year: Number.isFinite(symphony.year) ? symphony.year : null,
-          created_at: FALLBACK_TIMESTAMP,
-          updated_at: FALLBACK_TIMESTAMP,
-        });
-      });
-    });
-  });
-
-  return videos;
+  return catalog.genres
+    .map((genre) => ({
+      id: genre.id,
+      name: genre.name,
+      period: genre.period ?? null,
+      composers: genre.composers
+        .map((composer: CatalogComposer) => ({
+          id: composer.id,
+          name: composer.name,
+          works: composer.works.filter((work) => Boolean(work.title)),
+        }))
+        .filter((composer) => composer.works.length > 0),
+    }))
+    .filter((genre) => genre.composers.length > 0);
 };
 
-type GroupedVideos = Array<{
-  genre: string;
-  composers: Array<{
-    name: string;
-    symphonies: Video[];
-  }>;
-}>;
+const formatYear = (work: CatalogWork) => {
+  if (typeof work.year === 'number' && Number.isFinite(work.year)) {
+    return `Composed in ${work.year}`;
+  }
 
-const groupVideos = (videos: Video[]): GroupedVideos => {
-  const byGenre = new Map<string, Map<string, Video[]>>();
-
-  videos.forEach((video) => {
-    if (!byGenre.has(video.genre)) {
-      byGenre.set(video.genre, new Map());
-    }
-
-    const composers = byGenre.get(video.genre)!;
-    if (!composers.has(video.composer)) {
-      composers.set(video.composer, []);
-    }
-
-    composers.get(video.composer)!.push(video);
-  });
-
-  return Array.from(byGenre.entries())
-    .sort(([genreA], [genreB]) => genreA.localeCompare(genreB))
-    .map(([genre, composers]) => ({
-      genre,
-      composers: Array.from(composers.entries())
-        .sort(([composerA], [composerB]) => composerA.localeCompare(composerB))
-        .map(([composer, works]) => ({
-          name: composer,
-          symphonies: works.sort((a, b) => a.symphony.localeCompare(b.symphony)),
-        })),
-    }));
+  return 'Composition year unknown';
 };
+
+const remoteCatalogUrl = getConfiguredCatalogUrl();
 
 const PublicExperience = () => {
-  const [videos, setVideos] = useState<Video[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const fallbackVideos = useMemo(buildFallbackVideos, []);
+  const { status, result, error, reload } = useCatalog();
   const [autoplay, setAutoplay] = useState(false);
   const [selectedGenreIndex, setSelectedGenreIndex] = useState(0);
   const [selectedComposerIndex, setSelectedComposerIndex] = useState(0);
-  const [selectedSymphonyIndex, setSelectedSymphonyIndex] = useState(0);
+  const [selectedWorkIndex, setSelectedWorkIndex] = useState(0);
+
+  const genres = useMemo(() => buildViewModel(result?.catalog), [result?.catalog]);
 
   useEffect(() => {
-    const fetchVideos = async () => {
-      setIsLoading(true);
-      setStatusMessage(null);
+    if (selectedGenreIndex >= genres.length) {
+      setSelectedGenreIndex(0);
+      return;
+    }
 
-      if (!supabase) {
-        console.warn('Supabase client unavailable; rendering built-in catalogue.');
-        setVideos(fallbackVideos);
-        setStatusMessage(
-          'Live repertoire is unavailable because Supabase is not configured. Showing the built-in catalog instead.'
-        );
-        setIsLoading(false);
-        return;
-      }
+    const genre = genres[selectedGenreIndex];
+    if (!genre) {
+      setSelectedComposerIndex(0);
+      setSelectedWorkIndex(0);
+      return;
+    }
 
-      try {
-        const { data, error: supabaseError } = await supabase
-          .from('videos')
-          .select('*')
-          .order('genre', { ascending: true })
-          .order('composer', { ascending: true })
-          .order('symphony', { ascending: true });
+    if (selectedComposerIndex >= genre.composers.length) {
+      setSelectedComposerIndex(0);
+      return;
+    }
 
-        if (supabaseError) {
-          throw supabaseError;
-        }
+    const composer = genre.composers[selectedComposerIndex];
+    if (!composer) {
+      setSelectedWorkIndex(0);
+      return;
+    }
 
-        if (data && data.length > 0) {
-          setVideos(data);
-        } else {
-          setVideos(fallbackVideos);
-          setStatusMessage(
-            'Live repertoire is empty right now, so we are showing the built-in catalog as a fallback.'
-          );
-        }
-      } catch (err) {
-        console.error('Failed to load repertoire', err);
-        setVideos(fallbackVideos);
-        setStatusMessage('We could not reach the database. Showing the built-in catalog instead.');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchVideos();
-    // The Supabase client is a static singleton configured at build time.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fallbackVideos, supabase]);
-
-  const groupedVideos = useMemo(() => groupVideos(videos), [videos]);
+    if (selectedWorkIndex >= composer.works.length) {
+      setSelectedWorkIndex(0);
+    }
+  }, [genres, selectedGenreIndex, selectedComposerIndex, selectedWorkIndex]);
 
   useEffect(() => {
     setSelectedComposerIndex(0);
-    setSelectedSymphonyIndex(0);
+    setSelectedWorkIndex(0);
   }, [selectedGenreIndex]);
 
   useEffect(() => {
-    setSelectedSymphonyIndex(0);
+    setSelectedWorkIndex(0);
   }, [selectedComposerIndex]);
 
-  useEffect(() => {
-    if (selectedGenreIndex >= groupedVideos.length) {
-      setSelectedGenreIndex(0);
-    }
-  }, [groupedVideos.length, selectedGenreIndex]);
-
-  const currentGenre = groupedVideos[selectedGenreIndex];
+  const currentGenre = genres[selectedGenreIndex];
   const currentComposer = currentGenre?.composers[selectedComposerIndex];
-  const currentSymphony = currentComposer?.symphonies[selectedSymphonyIndex];
+  const currentWork = currentComposer?.works[selectedWorkIndex];
 
-  const genreItems = groupedVideos.map((group) => `${group.genre} • ${group.composers.length} composers`);
-  const composerItems = currentGenre?.composers.map((composer) => `${composer.name} • ${composer.symphonies.length} works`) ?? [];
-  const symphonyItems = currentComposer?.symphonies.map((symphony) =>
-    symphony.year ? `${symphony.symphony} (${symphony.year})` : symphony.symphony
+  const genreItems = genres.map((genre) =>
+    genre.period ? `${genre.name} • ${genre.period}` : `${genre.name}`
+  );
+  const composerItems = currentGenre?.composers.map((composer) => `${composer.name}`) ?? [];
+  const workItems = currentComposer?.works.map((work) =>
+    work.year && Number.isFinite(work.year) ? `${work.title} (${work.year})` : work.title
   ) ?? [];
 
-  if (isLoading) {
+  const statusMessage = useMemo(() => {
+    if (status === 'error') {
+      return error?.message ?? 'We could not load the live repertoire. Showing the built-in catalog instead.';
+    }
+
+    if (result?.source === 'static' && remoteCatalogUrl) {
+      return 'The live catalog is unreachable right now, so we are serving the built-in repertoire.';
+    }
+
+    if (result?.source === 'static' && !remoteCatalogUrl) {
+      return 'Showing the built-in repertoire. Configure VITE_CATALOG_URL to serve a remote catalog.';
+    }
+
+    return null;
+  }, [status, error, result]);
+
+  if (status === 'loading' || status === 'idle') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" aria-label="Loading repertoire" />
@@ -165,15 +133,21 @@ const PublicExperience = () => {
     );
   }
 
-  if (!currentGenre || !currentComposer || !currentSymphony) {
+  if (!genres.length || !currentGenre || !currentComposer || !currentWork) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center px-4">
-        <div className="bg-white rounded-xl shadow-lg p-8 max-w-lg text-center">
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">Repertoire unavailable</h1>
+        <div className="bg-white rounded-xl shadow-lg p-8 max-w-lg text-center space-y-4">
+          <h1 className="text-2xl font-bold text-gray-900">Repertoire unavailable</h1>
           <p className="text-gray-600">
-            We could not find any repertoire to display. Please ensure the database is seeded with videos or rely on the
-            built-in catalog.
+            We couldn&apos;t find any works to display. Check that your catalog has at least one genre, composer, and work.
           </p>
+          <button
+            onClick={reload}
+            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 font-medium text-white transition hover:bg-blue-500"
+          >
+            <RefreshCcw className="h-4 w-4" aria-hidden="true" />
+            Retry loading catalog
+          </button>
         </div>
       </div>
     );
@@ -199,19 +173,25 @@ const PublicExperience = () => {
         {statusMessage && (
           <div className="mb-6 flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4 text-blue-800">
             <Info className="mt-0.5 h-5 w-5 flex-shrink-0" aria-hidden="true" />
-            <p className="text-sm" role="status">
-              {statusMessage}
-            </p>
+            <div className="space-y-2">
+              <p className="text-sm" role="status">
+                {statusMessage}
+              </p>
+              {(status === 'error' || result?.source === 'static') && (
+                <button
+                  onClick={reload}
+                  className="inline-flex items-center gap-2 text-sm font-medium text-blue-700 hover:text-blue-900"
+                >
+                  <RefreshCcw className="h-4 w-4" aria-hidden="true" />
+                  Try loading again
+                </button>
+              )}
+            </div>
           </div>
         )}
 
         <div className="bg-white rounded-xl shadow-lg p-8 mb-8">
-          <Slider
-            title="Genre"
-            items={genreItems}
-            selectedIndex={selectedGenreIndex}
-            onSelect={setSelectedGenreIndex}
-          />
+          <Slider title="Genre" items={genreItems} selectedIndex={selectedGenreIndex} onSelect={setSelectedGenreIndex} />
 
           <Slider
             title="Composer"
@@ -220,12 +200,7 @@ const PublicExperience = () => {
             onSelect={setSelectedComposerIndex}
           />
 
-          <Slider
-            title="Work"
-            items={symphonyItems}
-            selectedIndex={selectedSymphonyIndex}
-            onSelect={setSelectedSymphonyIndex}
-          />
+          <Slider title="Work" items={workItems} selectedIndex={selectedWorkIndex} onSelect={setSelectedWorkIndex} />
         </div>
 
         <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
@@ -233,8 +208,10 @@ const PublicExperience = () => {
             <div className="text-center">
               <h3 className="text-lg font-semibold text-gray-800 mb-2">Genre</h3>
               <div className="bg-blue-50 rounded-lg p-4">
-                <p className="text-blue-800 font-medium">{currentGenre.genre}</p>
-                <p className="text-blue-600 text-sm">{currentGenre.composers.length} composers</p>
+                <p className="text-blue-800 font-medium">{currentGenre.name}</p>
+                <p className="text-blue-600 text-sm">
+                  {currentGenre.period ? currentGenre.period : `${currentGenre.composers.length} composers`}
+                </p>
               </div>
             </div>
 
@@ -242,34 +219,34 @@ const PublicExperience = () => {
               <h3 className="text-lg font-semibold text-gray-800 mb-2">Composer</h3>
               <div className="bg-purple-50 rounded-lg p-4">
                 <p className="text-purple-800 font-medium">{currentComposer.name}</p>
-                <p className="text-purple-600 text-sm">{currentComposer.symphonies.length} featured works</p>
+                <p className="text-purple-600 text-sm">{currentComposer.works.length} featured works</p>
               </div>
             </div>
 
             <div className="text-center">
               <h3 className="text-lg font-semibold text-gray-800 mb-2">Work</h3>
               <div className="bg-green-50 rounded-lg p-4">
-                <p className="text-green-800 font-medium">{currentSymphony.symphony}</p>
-                <p className="text-green-600 text-sm">
-                  {currentSymphony.year ? `Composed in ${currentSymphony.year}` : 'Composition year unknown'}
-                </p>
+                <p className="text-green-800 font-medium">{currentWork.title}</p>
+                <p className="text-green-600 text-sm">{formatYear(currentWork)}</p>
               </div>
             </div>
           </div>
         </div>
 
         <YouTubePlayer
-          videoId={currentSymphony.youtube_id}
+          videoId={currentWork.youtubeId ?? ''}
           autoplay={autoplay}
           onToggleAutoplay={() => setAutoplay((prev) => !prev)}
-          title={`${currentComposer.name} — ${currentSymphony.symphony}`}
+          title={`${currentComposer.name} — ${currentWork.title}`}
         />
       </main>
 
       <footer className="bg-white border-t border-gray-200 mt-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="text-center text-gray-600">
-            <p>&copy; {new Date().getFullYear()} Classical Music Discovery. Explore the timeless beauty of classical music.</p>
+            <p>
+              &copy; {new Date().getFullYear()} Classical Music Discovery. Explore the timeless beauty of classical music.
+            </p>
           </div>
         </div>
       </footer>

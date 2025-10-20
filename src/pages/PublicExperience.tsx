@@ -3,6 +3,7 @@ import { Music, Info } from 'lucide-react';
 import Slider from '../components/Slider';
 import YouTubePlayer from '../components/YouTubePlayer';
 import { musicData } from '../data/musicData';
+import { FALLBACK_DEFAULT_VIDEO, fallbackVideoIds } from '../data/fallbackVideoIds';
 import { supabase, Video } from '../lib/supabase';
 
 const FALLBACK_TIMESTAMP = '1970-01-01T00:00:00.000Z';
@@ -13,10 +14,12 @@ const buildFallbackVideos = (): Video[] => {
   musicData.forEach((genre, genreIndex) => {
     genre.composers.forEach((composer, composerIndex) => {
       composer.symphonies.forEach((symphony, symphonyIndex) => {
+        const youtubeId = fallbackVideoIds[symphony.searchTerm] ?? FALLBACK_DEFAULT_VIDEO;
+
         videos.push({
           id: `fallback-${genreIndex}-${composerIndex}-${symphonyIndex}`,
           search_term: symphony.searchTerm,
-          youtube_id: '',
+          youtube_id: youtubeId,
           genre: genre.name,
           composer: composer.name,
           symphony: symphony.name,
